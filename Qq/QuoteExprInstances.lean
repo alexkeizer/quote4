@@ -16,23 +16,12 @@ instance (α : Sort 7) : QuoteUnivOf α := ⟨Level.ofNat 7⟩
 instance (α : Sort 8) : QuoteUnivOf α := ⟨Level.ofNat 8⟩
 
 
-/-
-  TODO: figure out if we can use the following instance as a fall-back for arbitrary universes
--/
--- instance (priority := low) (α : Sort u) : QuoteUnivOf α
---   := ⟨Level.param .anonymous⟩
-
-
 /--
   Define a fallback instance of `QuoteExpr` for implementors of `ToExpr`
 -/
 instance (priority := low) {α : Type u} [ToExpr α] [QuoteUnivOf α] : QuoteExpr α where
   quoteTypeExpr := ToExpr.toTypeExpr α
   quoteExpr a   := ToExpr.toExpr a
-
--- /--
---   Similarly, define a fallback instance of ``
--- -/
 
 
 
