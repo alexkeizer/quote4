@@ -143,6 +143,7 @@ partial def unquoteExprList (e : Expr) : UnquoteM (List Expr) := do
 partial def unquoteExpr (e : Expr) : UnquoteM Expr := do
   if e.isAppOfArity ``QQ.qq 2 then return ← unquoteExpr (e.getArg! 1)
   if e.isAppOfArity ``toExpr 3 then return e.getArg! 2
+  if e.isAppOfArity ``toTypeExpr 2 then return e.getArg! 0
   let e ← whnf (← instantiateMVars e)
   let eTy ← withReducible <| whnf (← inferType e)
   if eTy.isAppOfArity ``QQ 1 then
@@ -261,7 +262,10 @@ def unquoteLCtx : UnquoteM Unit := do
           exprSubst := s.exprSubst.insert fv fv
         }
 
-      if !succes then
+      -- Check if `fv` is a type that implements `ToExpr`, but only if `ty` is not an metavariable.
+      -- Without the latter condition, this causes time-outs
+      if !succes && !ty.isMVar then
+        dbg_trace "{fv} : {ty}"
         try
           let _ ← trySynthToExpr fv fun u inst =>
             modify fun s => { s with
