@@ -205,6 +205,20 @@ def makeDefEq (a b : Expr) : MetaM (Option LocalContext) := do
   if let .fvar b ← whnf b then if let some lctx ← makeZetaReduce b a then return lctx
   return none
 
+
+/--
+  Try to synthesize an instance `inst : ToExpr $ty`, and if this succeeds execute `f u inst`, where
+  `u` is the universe level such that `ty : Type u`
+-/
+def trySynthToExpr (ty : Expr) (f : Level → Expr → UnquoteM Unit) : UnquoteM Bool := do
+  -- assert that `ty : Type u`, and extract universe level `u`
+  let .succ u ← getLevel ty | pure false
+
+  let LOption.some inst ← trySynthInstance (mkApp (mkConst ``ToExpr [u]) ty) | pure false
+  f u inst  
+  pure true
+
+
 def unquoteLCtx : UnquoteM Unit := do
   for ldecl in (← getLCtx) do
     let fv := ldecl.toExpr
@@ -240,13 +254,27 @@ def unquoteLCtx : UnquoteM Unit := do
         levelSubst := s.levelSubst.insert fv (mkLevelParam ldecl.userName)
       }
     else
-      let .succ u ← getLevel ty | pure ()
-      let LOption.some inst ← trySynthInstance (mkApp (mkConst ``ToExpr [u]) ty) | pure ()
-      modify fun s => { s with
-        unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
-        exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``toExpr [u]) ty inst fv))
-        exprSubst := s.exprSubst.insert fv fv
-      }
+      let succes ← trySynthToExpr ty fun u inst =>
+        modify fun s => { s with
+          unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
+          exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``toExpr [u]) ty inst fv))
+          exprSubst := s.exprSubst.insert fv fv
+        }
+
+      if !succes then
+        try
+          let _ ← trySynthToExpr fv fun u inst =>
+            modify fun s => { s with
+              unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
+              exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp2 (mkConst ``toTypeExpr [u]) fv inst))
+              exprSubst := s.exprSubst.insert fv fv
+            }
+          pure ()
+        catch _ =>
+          pure ()
+
+
+
 
 def isLevelFVar (n : Name) : MetaM (Option Expr) := do
   match (← getLCtx).findFromUserName? n with
