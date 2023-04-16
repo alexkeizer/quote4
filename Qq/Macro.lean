@@ -1,6 +1,7 @@
 import Lean
 import Qq.ForLean.ReduceEval
 import Qq.ForLean.ToExpr
+import Qq.QuoteExpr
 import Qq.Typ
 open Lean Meta Std
 
@@ -142,7 +143,7 @@ partial def unquoteExprList (e : Expr) : UnquoteM (List Expr) := do
 
 partial def unquoteExpr (e : Expr) : UnquoteM Expr := do
   if e.isAppOfArity ``QQ.qq 2 then return ← unquoteExpr (e.getArg! 1)
-  if e.isAppOfArity ``toExpr 3 then return e.getArg! 2
+  if e.isAppOfArity ``quoteExpr 3 then return e.getArg! 2
   let e ← whnf (← instantiateMVars e)
   let eTy ← withReducible <| whnf (← inferType e)
   if eTy.isAppOfArity ``QQ 1 then
@@ -240,11 +241,11 @@ def unquoteLCtx : UnquoteM Unit := do
         levelSubst := s.levelSubst.insert fv (mkLevelParam ldecl.userName)
       }
     else
-      let .succ u ← getLevel ty | pure ()
-      let LOption.some inst ← trySynthInstance (mkApp (mkConst ``ToExpr [u]) ty) | pure ()
+      let u ← getLevel ty
+      let LOption.some inst ← trySynthInstance (mkApp (mkConst ``QuoteExpr [u]) ty) | pure ()
       modify fun s => { s with
         unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
-        exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``toExpr [u]) ty inst fv))
+        exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``quoteExpr [u]) ty inst fv))
         exprSubst := s.exprSubst.insert fv fv
       }
 
