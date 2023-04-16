@@ -5,25 +5,19 @@ open Lean (Level ToExpr)
 
 namespace Qq
 
-instance (α : Sort 0) : QuoteUnivOf α := ⟨Level.ofNat 0⟩
-instance (α : Sort 1) : QuoteUnivOf α := ⟨Level.ofNat 1⟩
-instance (α : Sort 2) : QuoteUnivOf α := ⟨Level.ofNat 2⟩
-instance (α : Sort 3) : QuoteUnivOf α := ⟨Level.ofNat 3⟩
-instance (α : Sort 4) : QuoteUnivOf α := ⟨Level.ofNat 4⟩
-instance (α : Sort 5) : QuoteUnivOf α := ⟨Level.ofNat 5⟩
-instance (α : Sort 6) : QuoteUnivOf α := ⟨Level.ofNat 6⟩
-instance (α : Sort 7) : QuoteUnivOf α := ⟨Level.ofNat 7⟩
-instance (α : Sort 8) : QuoteUnivOf α := ⟨Level.ofNat 8⟩
-
-
 /--
   Define a fallback instance of `QuoteExpr` for implementors of `ToExpr`
 -/
-instance (priority := low) {α : Type u} [ToExpr α] [QuoteUnivOf α] : QuoteExpr α where
+instance (priority := low) {α : Type u} [ToExpr α] [ToLevel.{u}] : QuoteExpr α where
   quoteTypeExpr := ToExpr.toTypeExpr α
   quoteExpr a   := ToExpr.toExpr a
 
-
+/--
+  Define a fallback instance of `ToExpr` for implementors of `QuoteExpr`
+-/
+instance (priority := low) {α : Type u} [QuoteExpr α] : ToExpr α where
+  toTypeExpr := @quoteTypeExpr α _ 
+  toExpr := quoteExpr
 
 instance (a b : Nat) : QuoteExpr (a < b) where
   quoteTypeExpr := q($a < $b)

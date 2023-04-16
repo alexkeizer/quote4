@@ -1,17 +1,10 @@
 import Qq.Typ
+import Qq.ToLevel
 
 open Lean (Expr Level)
+open Lean
 
 namespace Qq
-
-/--
-  Gives a meta-level representation of the universe in which some type `α` lives
--/
-class QuoteUnivOf (α : Sort u) where
-  /-- Object representing the universe of `α` -/
-  quoteUniv : Level
-
-
 
 /--
   Converts a value of type `α` into an expression that represents this value in Lean.
@@ -22,13 +15,13 @@ class QuoteUnivOf (α : Sort u) where
       This ensures this type information is available when implementors use the `q(⋅)` macro
       to construct the expression.
 -/
-class QuoteExpr (α : Sort u) extends QuoteUnivOf α where
+class QuoteExpr (α : Sort u) extends ToLevel.{u} where
   /-- Expression representing the type `α` -/
-  quoteTypeExpr : QQ (Expr.sort quoteUniv)
+  quoteTypeExpr : QQ (Expr.sort ToLevel.toLevel.{u})
   /-- Convert a value `a : α` into an expression that denotes `a` -/
   quoteExpr     : α → QQ quoteTypeExpr
 
 
-export QuoteExpr (quoteExpr)
+export QuoteExpr (quoteExpr quoteTypeExpr)
 
 end Qq
