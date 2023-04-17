@@ -255,7 +255,7 @@ def unquoteLCtx : UnquoteM Unit := do
         levelSubst := s.levelSubst.insert fv (mkLevelParam ldecl.userName)
       }
     else
-      let succes ← trySynthToExpr ty fun u inst =>
+      let success ← trySynthToExpr ty fun u inst =>
         modify fun s => { s with
           unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
           exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``toExpr [u]) ty inst fv))
@@ -264,8 +264,7 @@ def unquoteLCtx : UnquoteM Unit := do
 
       -- Check if `fv` is a type that implements `ToExpr`, but only if `ty` is not an metavariable.
       -- Without the latter condition, this causes time-outs
-      if !succes && !ty.isMVar then
-        dbg_trace "{fv} : {ty}"
+      if !success && !ty.isMVar then
         try
           let _ ← trySynthToExpr fv fun u inst =>
             modify fun s => { s with
