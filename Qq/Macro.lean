@@ -206,6 +206,33 @@ def makeDefEq (a b : Expr) : MetaM (Option LocalContext) := do
   if let .fvar b ← whnf b then if let some lctx ← makeZetaReduce b a then return lctx
   return none
 
+/--
+  Try to (conservatively) reflect en expression.
+  That is, return an expression, of type `Expr`, that when evaluated gives the original expression.
+  If the expression contains any mvars, reflection fails and returns `none`
+
+  This implementation is very similar to the instance of `ToExpr Expr`, except it uses the `Unquote`
+  state to reflect free variables.
+-/
+def reflectExpr : Expr → OptionT UnquoteM Expr
+  | .fvar n           => do 
+      let some expr := (←get).exprBackSubst.find? (Expr.fvar n) | failure
+      pure <| match expr with
+        | .quoted e => e
+        | .unquoted e => e -- Should this return `failure`?
+
+  | .bvar n           => do pure <| mkApp (mkConst ``Expr.bvar) (mkNatLit n)
+  | .mvar m           => failure
+  | .sort l           => do pure <| mkApp (mkConst ``Expr.sort) (toExpr l)
+  | .const n ls       => do pure <| mkApp2 (mkConst ``Expr.const) (toExpr n) (toExpr ls)
+  | .app f x          => do pure <| mkApp2 (mkConst ``Expr.app) (←reflectExpr f) (←reflectExpr x)
+  | .lam x d b c      => do pure <| mkApp4 (mkConst ``Expr.lam) (toExpr x) (←reflectExpr d) (←reflectExpr b) (toExpr c)
+  | .forallE x d b c  => do pure <| mkApp4 (mkConst ``Expr.forallE) (toExpr x) (←reflectExpr d) (←reflectExpr b) (toExpr c)
+  | .letE x t v b c   => do pure <| mkApp5 (mkConst ``Expr.letE) (toExpr x) (←reflectExpr t) (←reflectExpr v) (←reflectExpr b) (toExpr c)
+  | .lit l            => do pure <| mkApp (mkConst ``Expr.lit) (toExpr l)
+  | .mdata md e       => do pure <| mkApp2 (mkConst ``Expr.mdata) (toExpr md) (←reflectExpr e)
+  | .proj s i e       => do pure <| mkApp3 (mkConst ``Expr.proj) (toExpr s) (mkNatLit i) (←reflectExpr e)
+
 
 /--
   Try to synthesize an instance `inst : ToExpr $ty`, and if this succeeds execute `f u inst`, where
@@ -221,9 +248,11 @@ def trySynthToExpr (ty : Expr) (f : Level → Expr → UnquoteM Unit) : UnquoteM
 
 
 def unquoteLCtx : UnquoteM Unit := do
-  for ldecl in (← getLCtx) do
+  for ldecl in (← getLCtx) do   
+    let ldecl ← instantiateLocalDeclMVars ldecl
     let fv := ldecl.toExpr
     let ty := ldecl.type
+
     let whnfTy ← withReducible <| whnf ty
     if whnfTy.isAppOfArity ``QQ 1 then
       let qTy := whnfTy.appArg!
@@ -255,26 +284,42 @@ def unquoteLCtx : UnquoteM Unit := do
         levelSubst := s.levelSubst.insert fv (mkLevelParam ldecl.userName)
       }
     else
+      -- Check if `ty` implements `ToExpr`
       let success ← trySynthToExpr ty fun u inst =>
         modify fun s => { s with
           unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
           exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp3 (mkConst ``toExpr [u]) ty inst fv))
           exprSubst := s.exprSubst.insert fv fv
         }
+      if success then
+        continue
 
       -- Check if `fv` is a type that implements `ToExpr`, but only if `ty` is not an metavariable.
       -- Without the latter condition, this causes time-outs
-      if !success && !ty.isMVar then
-        try
-          let _ ← trySynthToExpr fv fun u inst =>
+      if !ty.isMVar then
+        let success ← try
+          trySynthToExpr fv fun u inst =>
             modify fun s => { s with
               unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
               exprBackSubst := s.exprBackSubst.insert fv (.quoted (mkApp2 (mkConst ``toTypeExpr [u]) fv inst))
               exprSubst := s.exprSubst.insert fv fv
             }
-          pure ()
-        catch _ =>
-          pure ()
+          catch _ => pure false
+        if success then
+          continue
+
+      -- Finally, if `fv` is a `let`-binding, then try to reflect it according to its value
+      if let some <| some reflectedValue ← ldecl.value?.mapM reflectExpr
+      then
+        modify fun s => { s with
+          unquoted := s.unquoted.addDecl (ldecl.setUserName (addDollar ldecl.userName))
+          exprBackSubst := s.exprBackSubst.insert fv (.quoted reflectedValue)
+          exprSubst := s.exprSubst.insert fv fv
+        }
+        continue
+        
+
+      
 
 
 
